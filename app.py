@@ -8,7 +8,6 @@ import time
 # --- Page Config ---
 st.set_page_config("Manufacturing Dashboard", layout="wide")
 
-
 # --- Custom Glassmorphic Styling ---
 st.markdown("""
     <style>
@@ -52,6 +51,17 @@ st.markdown("""
         margin-top: -12px;
     }
 
+    .alert-box {
+        background-color: #ff4d4d;
+        color: white;
+        padding: 1rem;
+        border-radius: 8px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+
     .stPlotlyChart {
         border-radius: 16px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.4);
@@ -83,7 +93,7 @@ def create_gauge(value, green_range, orange_range, red_range, unit='°C'):
         number={'suffix': f" {unit}", 'font': {'size': 24, 'color': "white"}},
         domain={'x': [0, 1], 'y': [0, 1]},
         gauge={
-            'axis': {'range': [None, red_range[1]], 'tickcolor': "#888", 'tickwidth': 1.5, 'tickmode': 'auto'},
+            'axis': {'range': [None, red_range[1]], 'tickcolor': "#888", 'tickwidth': 1.5},
             'bar': {'color': bar_color, 'thickness': 0.25},
             'bgcolor': "rgba(0,0,0,0.1)",
             'borderwidth': 0,
@@ -112,29 +122,12 @@ if "history_df" not in st.session_state:
 live_df = get_live_data()
 live = live_df.iloc[0]
 st.session_state.history_df = pd.concat([st.session_state.history_df, live_df], ignore_index=True)
-
-# Reference accumulated history
 history_df = st.session_state.history_df.copy()
 
 # --- Title ---
 st.title("🏭 Manufacturing Operations Dashboard")
 
-# --- Alerts ---
-st.markdown("""
-    <style>
-    .alert-box {
-        background-color: #ff4d4d;
-        color: white;
-        padding: 1rem;
-        border-radius: 8px;
-        font-weight: bold;
-        text-align: center;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    }
-    </style>
-""", unsafe_allow_html=True)
-
+# --- Alert Setup ---
 alert_conditions = []
 if live["oil_temp"] > 110:
     alert_conditions.append("⚠️ Oil temperature is critically high!")
@@ -143,19 +136,15 @@ if live["vibration"] > 10:
 if live["bearing_temp"] > 115:
     alert_conditions.append("⚠️ Bearing temperature is too high!")
 
-if alert_conditions:
-    # Play sound once when alert appears
-    audio_html = """
-    <audio autoplay>
-        <source src="alert.mp3" type="audio/mpeg">
-    </audio>
-    """
-    st.markdown(audio_html, unsafe_allow_html=True)
+# --- Sound Toggle ---
+sound_enabled = st.checkbox("🔔 Enable Sound Alerts", value=False, help="Play audio when alerts are triggered")
 
+# --- Display Alerts and Sound ---
+if alert_conditions:
+    if sound_enabled:
+        st.audio("alert.mp3", format="audio/mp3", autoplay=True)
     for msg in alert_conditions:
         st.markdown(f"<div class='alert-box'>{msg}</div>", unsafe_allow_html=True)
-
-
 
 # --- KPI Section ---
 st.markdown("### ")

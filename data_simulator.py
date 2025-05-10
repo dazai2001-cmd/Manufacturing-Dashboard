@@ -14,7 +14,7 @@ def get_live_data():
         row = {
             "timestamp": now,
             "machine_type": m_type,
-            "oil_temp": 115,
+            "oil_temp": np.random.normal(72, 5) + (40 if spike else 0),
             "hydraulic_temp": np.random.normal(65, 4),
             "bearing_temp": np.random.normal(85, 6) + (35 if spike else 0),
             "vibration": np.random.normal(5.0, 1.0) + (6 if spike else 0),
