@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from data_simulator import get_live_data
+from fault_predictor import predict_fault
 import time
 
 # --- Page Config ---
@@ -146,6 +147,16 @@ with machine_kpi_cols[3]:
 with machine_kpi_cols[4]:
     total_cost_m = selected_machine_df["energy_cost"].sum()
     st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost_m:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
+
+# --- AI Fault Prediction ---
+probability, downtime_hours, explanation = predict_fault(selected_row, history_df)
+st.markdown("### 🧠 AI Fault Prediction")
+ai_cols = st.columns(2)
+with ai_cols[0]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{probability*100:.1f}%</div><div class='metric-label'>Failure Probability</div></div>", unsafe_allow_html=True)
+with ai_cols[1]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{downtime_hours:.1f} hrs</div><div class='metric-label'>Est. Downtime</div></div>", unsafe_allow_html=True)
+st.markdown(f"**Explanation:** {explanation}")
 
 # --- Alerts ---
 alert_conditions = []
