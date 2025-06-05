@@ -80,7 +80,7 @@ def create_gauge(value, green_range, orange_range, red_range, unit='°C'):
             'bgcolor': "rgba(0,0,0,0.1)",
             'borderwidth': 0,
             'steps': [],
-            'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': value}
+            'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': red_range[0]}
         }
     ))
     fig.update_traces(gauge_shape="angular")
