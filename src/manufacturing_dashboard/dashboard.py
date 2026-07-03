@@ -96,6 +96,22 @@ def format_currency(value):
     return f"${float(value):,.0f}"
 
 
+def normalize_prediction_result(prediction_result):
+    if isinstance(prediction_result, dict):
+        return prediction_result
+
+    probability, downtime_hours, explanation = prediction_result
+    return {
+        "probability": probability,
+        "downtime_hours": downtime_hours,
+        "explanation": explanation,
+        "threshold": 0.5,
+        "predicted_failure": probability >= 0.5,
+        "feature_contributions": [],
+        "model_name": "Runtime Model",
+    }
+
+
 def create_gauge(value, green_range, orange_range, red_range, unit="deg C"):
     if value <= green_range[1]:
         bar_color = "#d0aaff"
@@ -260,7 +276,7 @@ else:
         total_cost_m = selected_machine_df["energy_cost"].sum()
         st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost_m:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
 
-prediction = predict_fault(selected_row, history_df)
+prediction = normalize_prediction_result(predict_fault(selected_row, history_df))
 probability = prediction["probability"]
 downtime_hours = prediction["downtime_hours"]
 explanation = prediction["explanation"]
