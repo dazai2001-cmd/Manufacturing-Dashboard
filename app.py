@@ -1,4 +1,5 @@
 from pathlib import Path
+import runpy
 import sys
 
 
@@ -7,4 +8,4 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-import manufacturing_dashboard.dashboard  # noqa: F401,E402
+runpy.run_path(str(SRC / "manufacturing_dashboard" / "dashboard.py"), run_name="__main__")
