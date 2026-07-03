@@ -8,10 +8,10 @@ import streamlit as st
 
 from manufacturing_dashboard.analytics import calculate_maintenance_insights
 from manufacturing_dashboard.data import DATASET_PATH, get_live_data, load_ai4i_dataset
-from manufacturing_dashboard.model import AI4I_FEATURES, MODEL_NAME, MODEL_TARGET, get_model_diagnostics, predict_fault
+from manufacturing_dashboard.model import AI4I_FEATURES, MODEL_TARGET, get_model_diagnostics, predict_fault
 
 
-REFRESH_INTERVAL_SECONDS = 10
+DEFAULT_REFRESH_INTERVAL_SECONDS = 10
 ASSET_DIR = Path(__file__).resolve().parents[2] / "assets"
 
 st.set_page_config("Manufacturing Dashboard", layout="wide")
@@ -74,6 +74,11 @@ st.markdown("""
         font-size: 14px;
         line-height: 1.45;
     }
+    .section-band {
+        border-top: 1px solid rgba(255,255,255,0.12);
+        padding-top: 0.75rem;
+        margin-top: 1.5rem;
+    }
     .stPlotlyChart {
         border-radius: 8px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.4);
@@ -85,6 +90,10 @@ st.markdown("""
     .block-container { padding: 2rem; }
     </style>
 """, unsafe_allow_html=True)
+
+
+def format_currency(value):
+    return f"${float(value):,.0f}"
 
 
 def create_gauge(value, green_range, orange_range, red_range, unit="deg C"):
@@ -125,14 +134,43 @@ if "refresh_live_data" not in st.session_state:
     st.session_state.refresh_live_data = True
 if "machine_health_state" not in st.session_state:
     st.session_state.machine_health_state = {}
+if "replay_running" not in st.session_state:
+    st.session_state.replay_running = True
+if "refresh_interval_seconds" not in st.session_state:
+    st.session_state.refresh_interval_seconds = DEFAULT_REFRESH_INTERVAL_SECONDS
+if "step_once" not in st.session_state:
+    st.session_state.step_once = False
 
-if st.session_state.refresh_live_data or "live_df" not in st.session_state:
+st.title("Manufacturing Operations Dashboard")
+control_cols = st.columns([1, 1, 1, 1])
+with control_cols[0]:
+    st.toggle("Replay running", key="replay_running")
+with control_cols[1]:
+    st.slider("Replay speed", 3, 30, key="refresh_interval_seconds", help="Seconds between live test-row updates.")
+with control_cols[2]:
+    if st.button("Step one row", use_container_width=True):
+        st.session_state.step_once = True
+        st.session_state.refresh_live_data = True
+with control_cols[3]:
+    if st.button("Reset replay", use_container_width=True):
+        st.session_state.history_df = pd.DataFrame()
+        st.session_state.machine_health_state = {}
+        st.session_state.refresh_live_data = True
+        st.session_state.step_once = True
+
+should_load_live_data = (
+    "live_df" not in st.session_state
+    or st.session_state.refresh_live_data
+    or st.session_state.step_once
+)
+if should_load_live_data:
     st.session_state.live_df = get_live_data(st.session_state.machine_health_state)
     st.session_state.history_df = pd.concat(
         [st.session_state.history_df, st.session_state.live_df],
         ignore_index=True,
     )
     st.session_state.refresh_live_data = False
+    st.session_state.step_once = False
 
 live_df = st.session_state.live_df.copy()
 history_df = st.session_state.history_df.copy()
@@ -142,7 +180,6 @@ using_ai4i = {"machine_failure", "tool_wear_min", "torque_nm", "process_temp_c"}
 avg_predicted_risk = round(maintenance_insights["maintenance_risk_pct"].mean(), 1)
 model_diagnostics = get_model_diagnostics() if using_ai4i else {}
 
-st.title("Manufacturing Operations Dashboard")
 if not load_ai4i_dataset().empty:
     split_label = model_diagnostics.get("split", "70% train / 30% test")
     st.caption(f"Data source: UCI AI4I 2020 Predictive Maintenance replay ({DATASET_PATH.name}); split: {split_label}")
@@ -223,27 +260,55 @@ else:
         total_cost_m = selected_machine_df["energy_cost"].sum()
         st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost_m:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
 
-probability, downtime_hours, explanation = predict_fault(selected_row, history_df)
-predicted_failure = probability >= 0.5
-st.markdown("### AI Fault Prediction")
+prediction = predict_fault(selected_row, history_df)
+probability = prediction["probability"]
+downtime_hours = prediction["downtime_hours"]
+explanation = prediction["explanation"]
+threshold = prediction["threshold"]
+predicted_failure = prediction["predicted_failure"]
+st.markdown("<div class='section-band'></div>", unsafe_allow_html=True)
+st.markdown("### Predictive Analytics: Future Failure Probability")
 ai_cols = st.columns(3)
 with ai_cols[0]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{probability * 100:.1f}%</div><div class='metric-label'>Failure Probability</div></div>", unsafe_allow_html=True)
 with ai_cols[1]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{downtime_hours:.1f} hrs</div><div class='metric-label'>Estimated Downtime</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{threshold * 100:.0f}%</div><div class='metric-label'>Tuned Failure Threshold</div></div>", unsafe_allow_html=True)
 with ai_cols[2]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{MODEL_NAME}</div><div class='metric-label'>{MODEL_TARGET}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{prediction['model_name']}</div><div class='metric-label'>{MODEL_TARGET}</div></div>", unsafe_allow_html=True)
 st.caption("Model features: " + ", ".join(AI4I_FEATURES if using_ai4i else ["oil_temp", "hydraulic_temp", "bearing_temp", "vibration"]))
 if using_ai4i and model_diagnostics.get("accuracy") is not None:
+    f2_score = model_diagnostics.get("f2") or 0
+    roc_auc = model_diagnostics.get("roc_auc") or 0
     st.caption(
-        "Validation on held-out test split: "
+        "Evaluation summary: "
         f"train rows {model_diagnostics['train_rows']}, "
+        f"validation rows {model_diagnostics.get('validation_rows', 0)}, "
         f"test rows {model_diagnostics['test_rows']}, "
         f"accuracy {model_diagnostics['accuracy'] * 100:.1f}%, "
         f"recall {model_diagnostics['recall'] * 100:.1f}%, "
-        f"precision {model_diagnostics['precision'] * 100:.1f}%."
+        f"precision {model_diagnostics['precision'] * 100:.1f}%, "
+        f"F2 {f2_score * 100:.1f}%, "
+        f"ROC-AUC {roc_auc * 100:.1f}%."
     )
-st.markdown(f"**Explanation:** {explanation}")
+    if model_diagnostics.get("threshold_strategy"):
+        st.caption(model_diagnostics["threshold_strategy"])
+st.markdown(f"**Model explanation:** {explanation}")
+
+feature_contributions = prediction.get("feature_contributions", [])
+if feature_contributions:
+    contribution_df = pd.DataFrame(feature_contributions[:5])
+    contribution_df["Contribution"] = contribution_df["contribution"].map(lambda value: f"{value * 100:+.1f} pp")
+    contribution_df["Current Value"] = contribution_df.apply(
+        lambda row: f"{row['value']:.1f}" if row["feature"] != "rotational_speed_rpm" else f"{row['value']:.0f}",
+        axis=1,
+    )
+    st.dataframe(
+        contribution_df[["label", "Current Value", "Contribution"]].rename(columns={
+            "label": "Feature",
+        }),
+        hide_index=True,
+        use_container_width=True,
+    )
 
 if using_ai4i:
     actual_failure = int(selected_row["machine_failure"]) == 1
@@ -265,7 +330,18 @@ if using_ai4i:
         st.markdown(f"<div class='metric-card'><div class='metric-value'>{prediction_result}</div><div class='metric-label'>Prediction Check</div></div>", unsafe_allow_html=True)
     st.caption("The actual test outcome is shown only for evaluation after the model prediction; it is not used as a model input.")
 
-st.markdown("### Predictive Prescriptive Maintenance Analytics")
+if using_ai4i and model_diagnostics.get("model_comparison"):
+    with st.expander("Model comparison report", expanded=False):
+        comparison_df = pd.DataFrame(model_diagnostics["model_comparison"])
+        display_columns = ["model_name", "accuracy", "precision", "recall", "f1", "f2", "roc_auc"]
+        st.dataframe(
+            comparison_df[[column for column in display_columns if column in comparison_df.columns]],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+st.markdown("<div class='section-band'></div>", unsafe_allow_html=True)
+st.markdown("### Prescriptive Analytics: Maintenance Reason And Action")
 
 analytics_cols = st.columns(4)
 with analytics_cols[0]:
@@ -277,6 +353,16 @@ with analytics_cols[2]:
 with analytics_cols[3]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['time_to_service']}</div><div class='metric-label'>Service Window</div></div>", unsafe_allow_html=True)
 
+cost_cols = st.columns(4)
+with cost_cols[0]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['estimated_downtime_hours']:.1f} hrs</div><div class='metric-label'>Risk-Adjusted Downtime</div></div>", unsafe_allow_html=True)
+with cost_cols[1]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{format_currency(selected_insight['expected_failure_cost'])}</div><div class='metric-label'>Expected Failure Cost</div></div>", unsafe_allow_html=True)
+with cost_cols[2]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{format_currency(selected_insight['expected_preventive_cost'])}</div><div class='metric-label'>Preventive Cost</div></div>", unsafe_allow_html=True)
+with cost_cols[3]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{format_currency(selected_insight['estimated_cost_avoided'])}</div><div class='metric-label'>Estimated Cost Avoided</div></div>", unsafe_allow_html=True)
+
 st.markdown(
     f"""
     <div class='analytics-card'>
@@ -284,6 +370,7 @@ st.markdown(
         <div class='analytics-copy'><strong>Forecast horizon:</strong> {selected_insight['forecast_horizon']}</div>
         <div class='analytics-copy'><strong>Evidence:</strong> {selected_insight['evidence']}</div>
         <div class='analytics-copy'><strong>Recommended action:</strong> {selected_insight['prescribed_action']}</div>
+        <div class='analytics-copy'><strong>Cost logic:</strong> Preventive action is compared with expected downtime and corrective repair cost for this risk level.</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -330,6 +417,7 @@ with analytics_row[1]:
             "predicted_reason",
             "forecast_horizon",
             "time_to_service",
+            "estimated_cost_avoided",
             "prescribed_action",
         ]].rename(columns={
             "machine_type": "Machine",
@@ -338,6 +426,7 @@ with analytics_row[1]:
             "predicted_reason": "Predicted Reason",
             "forecast_horizon": "Forecast Horizon",
             "time_to_service": "Service Window",
+            "estimated_cost_avoided": "Cost Avoided",
             "prescribed_action": "Recommended Action",
         }),
         hide_index=True,
@@ -434,7 +523,11 @@ recent_data = recent_data.round(rounded_columns)
 recent_data["energy_cost"] = recent_data["energy_cost"].map("${:.2f}".format)
 st.dataframe(recent_data, use_container_width=True)
 
-st.markdown(f"Refreshing in {REFRESH_INTERVAL_SECONDS} seconds...")
-time.sleep(REFRESH_INTERVAL_SECONDS)
-st.session_state.refresh_live_data = True
-st.rerun()
+if st.session_state.replay_running:
+    refresh_interval = int(st.session_state.refresh_interval_seconds)
+    st.markdown(f"Refreshing in {refresh_interval} seconds...")
+    time.sleep(refresh_interval)
+    st.session_state.refresh_live_data = True
+    st.rerun()
+else:
+    st.info("Replay paused. Use Step one row to test the next held-out record.")

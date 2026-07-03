@@ -1,0 +1,4 @@
+model_key,model_name,threshold,accuracy,precision,recall,f1,f2,roc_auc,true_negative,false_positive,false_negative,true_positive
+random_forest,Random Forest,0.515,0.9757,0.6,0.8298,0.6964,0.7708,0.9735,1327,26,8,39
+gradient_boosting,Histogram Gradient Boosting,0.775,0.985,0.8095,0.7234,0.764,0.7391,0.9763,1345,8,13,34
+logistic_regression,Logistic Regression,0.805,0.95,0.358,0.617,0.4531,0.539,0.9174,1301,52,18,29

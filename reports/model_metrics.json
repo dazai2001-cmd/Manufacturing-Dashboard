@@ -1,0 +1,118 @@
+{
+  "model_name": "Random Forest",
+  "model_key": "random_forest",
+  "target": "Target: Machine failure",
+  "features": [
+    "air_temperature_k",
+    "process_temperature_k",
+    "rotational_speed_rpm",
+    "torque_nm",
+    "tool_wear_min"
+  ],
+  "chosen_threshold": 0.515,
+  "threshold_strategy": "Selected on validation data to maximize F2 score, weighting recall higher than precision.",
+  "train_rows": 7000,
+  "validation_rows": 1400,
+  "test_rows": 3000,
+  "split": "70% train / 30% held-out test",
+  "random_state": 42,
+  "class_balance": {
+    "train_failure_rate": 0.0339,
+    "test_failure_rate": 0.034
+  },
+  "validation_metrics": {
+    "threshold": 0.515,
+    "accuracy": 0.9757,
+    "precision": 0.6,
+    "recall": 0.8298,
+    "f1": 0.6964,
+    "f2": 0.7708,
+    "roc_auc": 0.9735,
+    "true_negative": 1327,
+    "false_positive": 26,
+    "false_negative": 8,
+    "true_positive": 39
+  },
+  "test_metrics": {
+    "threshold": 0.515,
+    "accuracy": 0.968,
+    "precision": 0.5192,
+    "recall": 0.7941,
+    "f1": 0.6279,
+    "f2": 0.7181,
+    "roc_auc": 0.9732,
+    "true_negative": 2823,
+    "false_positive": 75,
+    "false_negative": 21,
+    "true_positive": 81
+  },
+  "model_comparison": [
+    {
+      "model_key": "random_forest",
+      "model_name": "Random Forest",
+      "accuracy": 0.9757,
+      "precision": 0.6,
+      "recall": 0.8298,
+      "f1": 0.6964,
+      "f2": 0.7708,
+      "roc_auc": 0.9735,
+      "true_negative": 1327,
+      "false_positive": 26,
+      "false_negative": 8,
+      "true_positive": 39
+    },
+    {
+      "model_key": "gradient_boosting",
+      "model_name": "Histogram Gradient Boosting",
+      "accuracy": 0.985,
+      "precision": 0.8095,
+      "recall": 0.7234,
+      "f1": 0.764,
+      "f2": 0.7391,
+      "roc_auc": 0.9763,
+      "true_negative": 1345,
+      "false_positive": 8,
+      "false_negative": 13,
+      "true_positive": 34
+    },
+    {
+      "model_key": "logistic_regression",
+      "model_name": "Logistic Regression",
+      "accuracy": 0.95,
+      "precision": 0.358,
+      "recall": 0.617,
+      "f1": 0.4531,
+      "f2": 0.539,
+      "roc_auc": 0.9174,
+      "true_negative": 1301,
+      "false_positive": 52,
+      "false_negative": 18,
+      "true_positive": 29
+    }
+  ],
+  "feature_importance": [
+    {
+      "feature": "torque_nm",
+      "importance": 0.3404
+    },
+    {
+      "feature": "rotational_speed_rpm",
+      "importance": 0.3138
+    },
+    {
+      "feature": "tool_wear_min",
+      "importance": 0.2141
+    },
+    {
+      "feature": "air_temperature_k",
+      "importance": 0.0827
+    },
+    {
+      "feature": "process_temperature_k",
+      "importance": 0.0489
+    }
+  ],
+  "artifact_path": "models\\failure_model.joblib",
+  "comparison_path": "reports\\model_comparison.csv",
+  "trained_at_utc": "2026-07-03T20:45:46.190618+00:00"
+}

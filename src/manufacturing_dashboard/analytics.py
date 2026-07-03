@@ -10,6 +10,9 @@ SENSOR_LIMITS = {
     "vibration": {"watch": 7.0, "critical": 10.0, "label": "vibration"},
 }
 FORECAST_HORIZON_READINGS = 6
+HOURLY_DOWNTIME_COST = 850
+PREVENTIVE_MAINTENANCE_COST = 650
+CORRECTIVE_REPAIR_COST = 2400
 
 
 def _scale(value, start, end):
@@ -80,6 +83,24 @@ def _time_to_service(score):
     if score >= 30:
         return "This week"
     return "Routine interval"
+
+
+def _cost_impact(score, priority):
+    failure_likelihood = min(0.95, max(0.02, score / 100))
+    estimated_downtime_hours = 1.0 + failure_likelihood * 7.0 + priority * 0.75
+    expected_failure_cost = (
+        failure_likelihood * CORRECTIVE_REPAIR_COST
+        + estimated_downtime_hours * HOURLY_DOWNTIME_COST
+    )
+    expected_preventive_cost = PREVENTIVE_MAINTENANCE_COST + max(priority, 1) * 125
+    cost_avoided = max(0, expected_failure_cost - expected_preventive_cost)
+    return {
+        "failure_likelihood": failure_likelihood,
+        "estimated_downtime_hours": estimated_downtime_hours,
+        "expected_failure_cost": expected_failure_cost,
+        "expected_preventive_cost": expected_preventive_cost,
+        "estimated_cost_avoided": cost_avoided,
+    }
 
 
 def _top_cause(causes):
@@ -270,6 +291,7 @@ def calculate_maintenance_insights(live_df, history_df):
             evidence = []
         top_cause = _top_cause(causes)
         confidence = int(round(min(95, 48 + score * 0.45 + len(machine_history) * 1.2)))
+        cost = _cost_impact(score, top_cause["priority"])
 
         insights.append({
             "machine_type": machine,
@@ -285,6 +307,10 @@ def calculate_maintenance_insights(live_df, history_df):
             "projected_hydraulic_temp": predicted_hydraulic_temp,
             "projected_bearing_temp": predicted_bearing_temp,
             "projected_vibration": predicted_vibration,
+            "estimated_downtime_hours": round(cost["estimated_downtime_hours"], 1),
+            "expected_failure_cost": int(round(cost["expected_failure_cost"])),
+            "expected_preventive_cost": int(round(cost["expected_preventive_cost"])),
+            "estimated_cost_avoided": int(round(cost["estimated_cost_avoided"])),
             "evidence": " ".join(dict.fromkeys(evidence)) if evidence else "Forecasted readings remain within normal operating patterns.",
         })
 
