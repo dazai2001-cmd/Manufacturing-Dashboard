@@ -222,6 +222,7 @@ else:
         st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost_m:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
 
 probability, downtime_hours, explanation = predict_fault(selected_row, history_df)
+predicted_failure = probability >= 0.5
 st.markdown("### AI Fault Prediction")
 ai_cols = st.columns(3)
 with ai_cols[0]:
@@ -241,6 +242,26 @@ if using_ai4i and model_diagnostics.get("accuracy") is not None:
         f"precision {model_diagnostics['precision'] * 100:.1f}%."
     )
 st.markdown(f"**Explanation:** {explanation}")
+
+if using_ai4i:
+    actual_failure = int(selected_row["machine_failure"]) == 1
+    if predicted_failure and actual_failure:
+        prediction_result = "Correct Failure"
+    elif predicted_failure and not actual_failure:
+        prediction_result = "False Positive"
+    elif not predicted_failure and actual_failure:
+        prediction_result = "Missed Failure"
+    else:
+        prediction_result = "Correct Normal"
+
+    eval_cols = st.columns(3)
+    with eval_cols[0]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{'Yes' if predicted_failure else 'No'}</div><div class='metric-label'>Predicted Failure</div></div>", unsafe_allow_html=True)
+    with eval_cols[1]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{'Yes' if actual_failure else 'No'}</div><div class='metric-label'>Actual Test Outcome</div></div>", unsafe_allow_html=True)
+    with eval_cols[2]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{prediction_result}</div><div class='metric-label'>Prediction Check</div></div>", unsafe_allow_html=True)
+    st.caption("The actual test outcome is shown only for evaluation after the model prediction; it is not used as a model input.")
 
 st.markdown("### Predictive Prescriptive Maintenance Analytics")
 

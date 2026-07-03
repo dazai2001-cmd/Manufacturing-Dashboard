@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-from data_simulator import FAILURE_LABELS, TEST_FRACTION, TRAIN_FRACTION, load_ai4i_dataset, load_ai4i_split
+from data_simulator import TEST_FRACTION, TRAIN_FRACTION, load_ai4i_dataset, load_ai4i_split
 
 
 MODEL_NAME = "Random Forest"
@@ -131,13 +131,6 @@ def _ai4i_explanation(selected_row):
         explanations.append("abnormal power load")
     if torque * tool_wear >= 11000:
         explanations.append("overstrain from torque and tool wear")
-
-    labeled_failures = [
-        label for code, label in FAILURE_LABELS.items()
-        if int(selected_row.get(code, 0)) == 1
-    ]
-    if labeled_failures:
-        explanations.append("dataset label: " + ", ".join(labeled_failures))
 
     return ", ".join(explanations) if explanations else "No strong AI4I failure drivers detected"
 

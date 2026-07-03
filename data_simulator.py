@@ -108,16 +108,9 @@ def _dashboard_row_from_ai4i(row, now):
     bearing_temp = process_temp_c + 38 + torque_load * 15 + wear_load * 18
     vibration = 2.2 + rpm_instability * 2.4 + torque_load * 1.2 + wear_load * 3.4
 
-    if failure:
-        oil_temp += 7
-        hydraulic_temp += 5
-        bearing_temp += 9
-        vibration += 1.2
-
-    unit_penalty = 1 if failure else 0
-    actual_output = max(1, expected - unit_penalty - int(wear_load > 0.9))
-    efficiency = _clamp((actual_output / expected) * 100 - wear_load * 12 - failure * 10, 20, 100)
-    defect_rate = 0.4 + wear_load * 2.2 + torque_load * 0.6 + failure * 2.8
+    actual_output = max(1, expected - int(wear_load > 0.9))
+    efficiency = _clamp((actual_output / expected) * 100 - wear_load * 12, 20, 100)
+    defect_rate = 0.4 + wear_load * 2.2 + torque_load * 0.6
     energy_usage = max(0.5, power_kw * 0.45 + torque_load * 1.1)
 
     return {
