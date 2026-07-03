@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from data_simulator import DATASET_PATH, get_live_data, load_ai4i_dataset
-from fault_predictor import AI4I_FEATURES, MODEL_NAME, MODEL_TARGET, predict_fault
+from fault_predictor import AI4I_FEATURES, MODEL_NAME, MODEL_TARGET, get_model_diagnostics, predict_fault
 from maintenance_analytics import calculate_maintenance_insights
 
 
@@ -138,10 +138,12 @@ maintenance_insights = calculate_maintenance_insights(live_df, history_df)
 
 using_ai4i = {"machine_failure", "tool_wear_min", "torque_nm", "process_temp_c"}.issubset(history_df.columns)
 avg_predicted_risk = round(maintenance_insights["maintenance_risk_pct"].mean(), 1)
+model_diagnostics = get_model_diagnostics() if using_ai4i else {}
 
 st.title("Manufacturing Operations Dashboard")
 if not load_ai4i_dataset().empty:
-    st.caption(f"Data source: UCI AI4I 2020 Predictive Maintenance replay ({DATASET_PATH.name})")
+    split_label = model_diagnostics.get("split", "70% train / 30% test")
+    st.caption(f"Data source: UCI AI4I 2020 Predictive Maintenance replay ({DATASET_PATH.name}); split: {split_label}")
 st.markdown("### Overall Manufacturing KPIs")
 
 kpi_cols = st.columns(5)
@@ -150,11 +152,10 @@ if using_ai4i:
     observed_failure_rate = history_df["machine_failure"].mean() * 100
     avg_tool_wear = history_df["tool_wear_min"].mean()
     avg_torque = history_df["torque_nm"].mean()
-    avg_process_temp = history_df["process_temp_c"].mean()
     with kpi_cols[0]:
-        st.markdown(f"<div class='metric-card'><div class='metric-value'>{records_replayed}</div><div class='metric-label'>AI4I Records Replayed</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{records_replayed}</div><div class='metric-label'>Test Rows Replayed</div></div>", unsafe_allow_html=True)
     with kpi_cols[1]:
-        st.markdown(f"<div class='metric-card'><div class='metric-value'>{observed_failure_rate:.1f}%</div><div class='metric-label'>Observed Failure Rate</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{observed_failure_rate:.1f}%</div><div class='metric-label'>Observed Test Failure Rate</div></div>", unsafe_allow_html=True)
     with kpi_cols[2]:
         st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_tool_wear:.0f} min</div><div class='metric-label'>Avg Tool Wear</div></div>", unsafe_allow_html=True)
     with kpi_cols[3]:
@@ -192,7 +193,7 @@ if using_ai4i:
     selected_failure_rate = selected_machine_df["machine_failure"].mean() * 100
     latest_failure_type = str(selected_row.get("failure_type", "None"))
     with machine_kpi_cols[0]:
-        st.markdown(f"<div class='metric-card'><div class='metric-value'>{len(selected_machine_df)}</div><div class='metric-label'>Records Replayed</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{len(selected_machine_df)}</div><div class='metric-label'>Test Rows Replayed</div></div>", unsafe_allow_html=True)
     with machine_kpi_cols[1]:
         st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_failure_rate:.1f}%</div><div class='metric-label'>Observed Failure Rate</div></div>", unsafe_allow_html=True)
     with machine_kpi_cols[2]:
@@ -230,6 +231,15 @@ with ai_cols[1]:
 with ai_cols[2]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{MODEL_NAME}</div><div class='metric-label'>{MODEL_TARGET}</div></div>", unsafe_allow_html=True)
 st.caption("Model features: " + ", ".join(AI4I_FEATURES if using_ai4i else ["oil_temp", "hydraulic_temp", "bearing_temp", "vibration"]))
+if using_ai4i and model_diagnostics.get("accuracy") is not None:
+    st.caption(
+        "Validation on held-out test split: "
+        f"train rows {model_diagnostics['train_rows']}, "
+        f"test rows {model_diagnostics['test_rows']}, "
+        f"accuracy {model_diagnostics['accuracy'] * 100:.1f}%, "
+        f"recall {model_diagnostics['recall'] * 100:.1f}%, "
+        f"precision {model_diagnostics['precision'] * 100:.1f}%."
+    )
 st.markdown(f"**Explanation:** {explanation}")
 
 st.markdown("### Predictive Prescriptive Maintenance Analytics")

@@ -4,9 +4,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 
 DATASET_PATH = Path(__file__).resolve().parent / "data" / "ai4i2020.csv"
+TRAIN_FRACTION = 0.70
+TEST_FRACTION = 0.30
+SPLIT_RANDOM_STATE = 42
 PRODUCT_TYPE_TO_MACHINE = {
     "H": "CNC",
     "M": "Milling",
@@ -58,6 +62,30 @@ def load_ai4i_dataset():
     df["power_kw"] = df["torque_nm"] * df["rotational_speed_rpm"] / 9550
     df["failure_type"] = df.apply(_failure_type, axis=1)
     return df
+
+
+@lru_cache(maxsize=2)
+def load_ai4i_split(split):
+    dataset = load_ai4i_dataset()
+    if dataset.empty:
+        return pd.DataFrame()
+
+    train_df, test_df = train_test_split(
+        dataset,
+        test_size=TEST_FRACTION,
+        random_state=SPLIT_RANDOM_STATE,
+        stratify=dataset["machine_failure"],
+    )
+    train_df = train_df.sort_values("udi").copy()
+    test_df = test_df.sort_values("udi").copy()
+    train_df["dataset_split"] = "train"
+    test_df["dataset_split"] = "test"
+
+    if split == "train":
+        return train_df.reset_index(drop=True)
+    if split == "test":
+        return test_df.reset_index(drop=True)
+    return dataset.copy().reset_index(drop=True)
 
 
 def _failure_type(row):
@@ -114,6 +142,7 @@ def _dashboard_row_from_ai4i(row, now):
         "power_kw": power_kw,
         "machine_failure": failure,
         "failure_type": row["failure_type"],
+        "dataset_split": row.get("dataset_split", "test"),
         "TWF": int(row["TWF"]),
         "HDF": int(row["HDF"]),
         "PWF": int(row["PWF"]),
@@ -133,7 +162,7 @@ def _dashboard_row_from_ai4i(row, now):
 
 def _get_ai4i_live_data(replay_state):
     now = datetime.datetime.now()
-    dataset = load_ai4i_dataset()
+    dataset = load_ai4i_split("test")
     cursors = replay_state.setdefault("ai4i_cursors", {})
     rows = []
 
@@ -204,6 +233,6 @@ def _get_synthetic_live_data(health_state):
 def get_live_data(health_state=None):
     if health_state is None:
         health_state = {}
-    if not load_ai4i_dataset().empty:
+    if not load_ai4i_split("test").empty:
         return _get_ai4i_live_data(health_state)
     return _get_synthetic_live_data(health_state)

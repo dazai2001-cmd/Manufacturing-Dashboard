@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-from data_simulator import FAILURE_LABELS, load_ai4i_dataset
+from data_simulator import FAILURE_LABELS, TEST_FRACTION, TRAIN_FRACTION, load_ai4i_dataset, load_ai4i_split
 
 
 MODEL_NAME = "Random Forest"
@@ -31,7 +31,7 @@ FAULT_THRESHOLDS = {
 
 @lru_cache(maxsize=1)
 def _train_ai4i_model():
-    data = load_ai4i_dataset()
+    data = load_ai4i_split("train")
     if data.empty:
         return None
 
@@ -48,6 +48,45 @@ def _train_ai4i_model():
     )
     model.fit(training_data[AI4I_FEATURES], training_data["machine_failure"])
     return model
+
+
+@lru_cache(maxsize=1)
+def get_model_diagnostics():
+    model = _train_ai4i_model()
+    train_df = load_ai4i_split("train")
+    test_df = load_ai4i_split("test")
+    if model is None or train_df.empty or test_df.empty:
+        return {
+            "model_name": MODEL_NAME,
+            "target": MODEL_TARGET,
+            "train_rows": 0,
+            "test_rows": 0,
+            "split": "Unavailable",
+            "accuracy": None,
+            "recall": None,
+            "precision": None,
+        }
+
+    test_data = test_df.dropna(subset=AI4I_FEATURES + ["machine_failure"])
+    y_true = test_data["machine_failure"].astype(int)
+    y_pred = model.predict(test_data[AI4I_FEATURES]).astype(int)
+    true_positive = int(((y_true == 1) & (y_pred == 1)).sum())
+    false_positive = int(((y_true == 0) & (y_pred == 1)).sum())
+    false_negative = int(((y_true == 1) & (y_pred == 0)).sum())
+    accuracy = float((y_true == y_pred).mean())
+    recall = true_positive / max(true_positive + false_negative, 1)
+    precision = true_positive / max(true_positive + false_positive, 1)
+
+    return {
+        "model_name": MODEL_NAME,
+        "target": MODEL_TARGET,
+        "train_rows": len(train_df),
+        "test_rows": len(test_df),
+        "split": f"{int(TRAIN_FRACTION * 100)}% train / {int(TEST_FRACTION * 100)}% test",
+        "accuracy": accuracy,
+        "recall": recall,
+        "precision": precision,
+    }
 
 
 def _train_threshold_fallback(history_df):
