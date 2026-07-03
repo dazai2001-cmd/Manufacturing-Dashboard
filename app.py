@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from data_simulator import get_live_data
+from data_simulator import DATASET_PATH, get_live_data, load_ai4i_dataset
 from fault_predictor import predict_fault
 from maintenance_analytics import calculate_maintenance_insights
 
@@ -143,6 +143,8 @@ total_energy = round(history_df["energy_usage"].sum(), 2)
 total_cost = round(history_df["energy_cost"].sum(), 2)
 
 st.title("Manufacturing Operations Dashboard")
+if not load_ai4i_dataset().empty:
+    st.caption(f"Data source: UCI AI4I 2020 Predictive Maintenance replay ({DATASET_PATH.name})")
 st.markdown("### Overall Manufacturing KPIs")
 
 kpi_cols = st.columns(5)

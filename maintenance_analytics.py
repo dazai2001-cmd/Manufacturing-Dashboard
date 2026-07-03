@@ -198,6 +198,57 @@ def calculate_maintenance_insights(live_df, history_df):
                 f"Energy per unit is {_fmt(energy_per_unit, ' kWh/unit', 2)} versus recent average {_fmt(recent_energy_per_unit, ' kWh/unit', 2)}."
             )
 
+        if {"tool_wear_min", "torque_nm", "rotational_speed_rpm", "air_temperature_k", "process_temperature_k"}.issubset(row.index):
+            tool_wear = float(row["tool_wear_min"])
+            torque = float(row["torque_nm"])
+            rpm = float(row["rotational_speed_rpm"])
+            air_temp = float(row["air_temperature_k"])
+            process_temp = float(row["process_temperature_k"])
+            power_kw = torque * rpm / 9550
+            temp_gap = process_temp - air_temp
+
+            tool_wear_points = 22 * _scale(tool_wear, 150, 240)
+            if tool_wear_points >= 7:
+                causes.append({
+                    "reason": "Tool wear is approaching failure range",
+                    "action": "Plan tool replacement and verify cutting parameters before the next batch.",
+                    "points": tool_wear_points,
+                    "priority": 3,
+                })
+                evidence.append(f"AI4I tool wear is {_fmt(tool_wear, ' min', 0)}.")
+
+            heat_points = 18 * _scale(temp_gap, 8.5, 12.0)
+            if heat_points >= 7:
+                causes.append({
+                    "reason": "Heat dissipation stress",
+                    "action": "Inspect cooling, airflow, and process temperature control.",
+                    "points": heat_points,
+                    "priority": 2,
+                })
+                evidence.append(f"Process temperature is {_fmt(temp_gap, ' K')} above air temperature.")
+
+            high_power_points = 16 * _scale(power_kw, 8.5, 10.5)
+            low_power_points = 16 * _scale(3.5 - power_kw, 0, 1.5)
+            power_points = max(high_power_points, low_power_points)
+            if power_points >= 7:
+                causes.append({
+                    "reason": "Power load is outside the normal operating band",
+                    "action": "Check torque, spindle speed, motor load, and feed settings.",
+                    "points": power_points,
+                    "priority": 2,
+                })
+                evidence.append(f"Estimated AI4I power load is {_fmt(power_kw, ' kW', 2)}.")
+
+            overstrain_points = 20 * _scale(torque * tool_wear, 8500, 12000)
+            if overstrain_points >= 7:
+                causes.append({
+                    "reason": "Overstrain risk from torque and accumulated tool wear",
+                    "action": "Reduce load or replace the tool before running another high-torque job.",
+                    "points": overstrain_points,
+                    "priority": 3,
+                })
+                evidence.append(f"Torque-wear product is {_fmt(torque * tool_wear, precision=0)}.")
+
         for column, limits in SENSOR_LIMITS.items():
             predicted_values = {
                 "oil_temp": predicted_oil_temp,
