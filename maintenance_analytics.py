@@ -9,6 +9,7 @@ SENSOR_LIMITS = {
     "bearing_temp": {"watch": 95, "critical": 115, "label": "bearing temperature"},
     "vibration": {"watch": 7.0, "critical": 10.0, "label": "vibration"},
 }
+FORECAST_HORIZON_READINGS = 6
 
 
 def _scale(value, start, end):
@@ -30,11 +31,35 @@ def _trend(machine_history, column, lookback=6):
     return float(values.iloc[-1] - values.iloc[0])
 
 
+def _trend_per_reading(machine_history, column, lookback=8):
+    values = machine_history[column].dropna().tail(lookback)
+    if len(values) < 3:
+        return 0
+    return float((values.iloc[-1] - values.iloc[0]) / (len(values) - 1))
+
+
 def _recent_average(machine_history, column, lookback=8):
     values = machine_history[column].dropna().tail(lookback)
     if values.empty:
         return math.nan
     return float(values.mean())
+
+
+def _recent_peak(machine_history, column, lookback=8):
+    values = machine_history[column].dropna().tail(lookback)
+    if values.empty:
+        return math.nan
+    return float(values.max())
+
+
+def _forecast_value(machine_history, column, current_value, horizon=FORECAST_HORIZON_READINGS):
+    trend = max(0, _trend_per_reading(machine_history, column))
+    projected_value = current_value + trend * horizon
+    recent_peak = _recent_peak(machine_history, column)
+    if pd.isna(recent_peak):
+        return projected_value
+    # Keep recent stress visible so a one-refresh recovery does not erase risk.
+    return max(projected_value, current_value * 0.7 + recent_peak * 0.3)
 
 
 def _risk_band(score):
@@ -90,13 +115,17 @@ def calculate_maintenance_insights(live_df, history_df):
         hydraulic_temp = float(row["hydraulic_temp"])
         bearing_temp = float(row["bearing_temp"])
         vibration = float(row["vibration"])
+        predicted_oil_temp = _forecast_value(machine_history, "oil_temp", oil_temp)
+        predicted_hydraulic_temp = _forecast_value(machine_history, "hydraulic_temp", hydraulic_temp)
+        predicted_bearing_temp = _forecast_value(machine_history, "bearing_temp", bearing_temp)
+        predicted_vibration = _forecast_value(machine_history, "vibration", vibration)
         efficiency = float(row["production_efficiency"])
         defect_rate = float(row["defect_rate"])
         energy_per_unit = float(row["energy_usage"]) / max(float(row["units_produced"]), 1)
 
         bearing_vibration_points = (
-            24 * _scale(bearing_temp, 92, 118)
-            + 28 * _scale(vibration, 6.5, 11.5)
+            24 * _scale(predicted_bearing_temp, 92, 118)
+            + 28 * _scale(predicted_vibration, 6.5, 11.5)
             + 8 * _scale(_trend(machine_history, "bearing_temp"), 4, 18)
             + 8 * _scale(_trend(machine_history, "vibration"), 0.8, 4.0)
         )
@@ -108,13 +137,13 @@ def calculate_maintenance_insights(live_df, history_df):
                 "priority": 3,
             })
             evidence.append(
-                f"Bearing temp {_fmt(bearing_temp, 'C')} and vibration {_fmt(vibration, ' mm/s', 2)} are trending toward wear thresholds."
+                f"Bearing temp is projected to {_fmt(predicted_bearing_temp, 'C')} and vibration to {_fmt(predicted_vibration, ' mm/s', 2)} within {FORECAST_HORIZON_READINGS} readings."
             )
 
         lubrication_points = (
-            28 * _scale(oil_temp, 82, 112)
+            28 * _scale(predicted_oil_temp, 82, 112)
             + 10 * _scale(_trend(machine_history, "oil_temp"), 4, 18)
-            + 8 * _scale(vibration, 7.0, 11.0)
+            + 8 * _scale(predicted_vibration, 7.0, 11.0)
         )
         if lubrication_points >= 10:
             causes.append({
@@ -123,10 +152,10 @@ def calculate_maintenance_insights(live_df, history_df):
                 "points": lubrication_points,
                 "priority": 3,
             })
-            evidence.append(f"Oil temp is {_fmt(oil_temp, 'C')} with recent heat gain of {_fmt(_trend(machine_history, 'oil_temp'), 'C')}.")
+            evidence.append(f"Oil temp is projected to {_fmt(predicted_oil_temp, 'C')} from current {_fmt(oil_temp, 'C')}.")
 
         hydraulic_points = (
-            22 * _scale(hydraulic_temp, 72, 98)
+            22 * _scale(predicted_hydraulic_temp, 72, 98)
             + 8 * _scale(_trend(machine_history, "hydraulic_temp"), 3, 16)
         )
         if hydraulic_points >= 8:
@@ -136,7 +165,7 @@ def calculate_maintenance_insights(live_df, history_df):
                 "points": hydraulic_points,
                 "priority": 2,
             })
-            evidence.append(f"Hydraulic temp is {_fmt(hydraulic_temp, 'C')} and may indicate pump or cooling stress.")
+            evidence.append(f"Hydraulic temp is projected to {_fmt(predicted_hydraulic_temp, 'C')} and may indicate pump or cooling stress.")
 
         quality_points = (
             12 * _scale(defect_rate, 1.2, 3.0)
@@ -170,15 +199,24 @@ def calculate_maintenance_insights(live_df, history_df):
             )
 
         for column, limits in SENSOR_LIMITS.items():
-            value = float(row[column])
+            predicted_values = {
+                "oil_temp": predicted_oil_temp,
+                "hydraulic_temp": predicted_hydraulic_temp,
+                "bearing_temp": predicted_bearing_temp,
+                "vibration": predicted_vibration,
+            }
+            value = predicted_values[column]
             if value >= limits["critical"]:
                 score += 18
-                evidence.append(f"Critical {limits['label']} threshold exceeded: {_fmt(value, precision=2)}.")
+                evidence.append(f"Projected {limits['label']} reaches critical range: {_fmt(value, precision=2)}.")
             elif value >= limits["watch"]:
                 score += 8
 
         score += sum(cause["points"] for cause in causes)
         score = int(round(min(score, 100)))
+        if score < 30:
+            causes = []
+            evidence = []
         top_cause = _top_cause(causes)
         confidence = int(round(min(95, 48 + score * 0.45 + len(machine_history) * 1.2)))
 
@@ -191,7 +229,12 @@ def calculate_maintenance_insights(live_df, history_df):
             "priority": top_cause["priority"],
             "confidence_pct": confidence,
             "time_to_service": _time_to_service(score),
-            "evidence": " ".join(dict.fromkeys(evidence)) if evidence else "Current readings are within normal operating patterns.",
+            "forecast_horizon": f"Next {FORECAST_HORIZON_READINGS} readings",
+            "projected_oil_temp": predicted_oil_temp,
+            "projected_hydraulic_temp": predicted_hydraulic_temp,
+            "projected_bearing_temp": predicted_bearing_temp,
+            "projected_vibration": predicted_vibration,
+            "evidence": " ".join(dict.fromkeys(evidence)) if evidence else "Forecasted readings remain within normal operating patterns.",
         })
 
     return pd.DataFrame(insights).sort_values(

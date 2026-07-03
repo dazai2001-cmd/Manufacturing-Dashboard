@@ -121,9 +121,11 @@ if "history_df" not in st.session_state:
     st.session_state.history_df = pd.DataFrame()
 if "refresh_live_data" not in st.session_state:
     st.session_state.refresh_live_data = True
+if "machine_health_state" not in st.session_state:
+    st.session_state.machine_health_state = {}
 
 if st.session_state.refresh_live_data or "live_df" not in st.session_state:
-    st.session_state.live_df = get_live_data()
+    st.session_state.live_df = get_live_data(st.session_state.machine_health_state)
     st.session_state.history_df = pd.concat(
         [st.session_state.history_df, st.session_state.live_df],
         ignore_index=True,
@@ -189,11 +191,11 @@ with ai_cols[1]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{downtime_hours:.1f} hrs</div><div class='metric-label'>Estimated Downtime</div></div>", unsafe_allow_html=True)
 st.markdown(f"**Explanation:** {explanation}")
 
-st.markdown("### Prescriptive Maintenance Analytics")
+st.markdown("### Predictive Prescriptive Maintenance Analytics")
 
 analytics_cols = st.columns(4)
 with analytics_cols[0]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['maintenance_risk_pct']}%</div><div class='metric-label'>Maintenance Risk</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['maintenance_risk_pct']}%</div><div class='metric-label'>Predicted Maintenance Risk</div></div>", unsafe_allow_html=True)
 with analytics_cols[1]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['risk_band']}</div><div class='metric-label'>Risk Band</div></div>", unsafe_allow_html=True)
 with analytics_cols[2]:
@@ -205,6 +207,7 @@ st.markdown(
     f"""
     <div class='analytics-card'>
         <div class='analytics-title'>Likely reason: {selected_insight['predicted_reason']}</div>
+        <div class='analytics-copy'><strong>Forecast horizon:</strong> {selected_insight['forecast_horizon']}</div>
         <div class='analytics-copy'><strong>Evidence:</strong> {selected_insight['evidence']}</div>
         <div class='analytics-copy'><strong>Recommended action:</strong> {selected_insight['prescribed_action']}</div>
     </div>
@@ -251,6 +254,7 @@ with analytics_row[1]:
             "maintenance_risk_pct",
             "risk_band",
             "predicted_reason",
+            "forecast_horizon",
             "time_to_service",
             "prescribed_action",
         ]].rename(columns={
@@ -258,6 +262,7 @@ with analytics_row[1]:
             "maintenance_risk_pct": "Risk %",
             "risk_band": "Band",
             "predicted_reason": "Predicted Reason",
+            "forecast_horizon": "Forecast Horizon",
             "time_to_service": "Service Window",
             "prescribed_action": "Recommended Action",
         }),
