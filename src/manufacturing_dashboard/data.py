@@ -7,7 +7,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 
-DATASET_PATH = Path(__file__).resolve().parent / "data" / "ai4i2020.csv"
+DATASET_PATH = Path(__file__).resolve().parents[2] / "data" / "ai4i2020.csv"
 TRAIN_FRACTION = 0.70
 TEST_FRACTION = 0.30
 SPLIT_RANDOM_STATE = 42

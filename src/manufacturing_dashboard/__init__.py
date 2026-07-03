@@ -1,0 +1,1 @@
+"""Manufacturing dashboard package."""

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-from data_simulator import TEST_FRACTION, TRAIN_FRACTION, load_ai4i_dataset, load_ai4i_split
+from manufacturing_dashboard.data import TEST_FRACTION, TRAIN_FRACTION, load_ai4i_dataset, load_ai4i_split
 
 
 MODEL_NAME = "Random Forest"
