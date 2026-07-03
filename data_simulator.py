@@ -11,15 +11,10 @@ DATASET_PATH = Path(__file__).resolve().parent / "data" / "ai4i2020.csv"
 TRAIN_FRACTION = 0.70
 TEST_FRACTION = 0.30
 SPLIT_RANDOM_STATE = 42
-PRODUCT_TYPE_TO_MACHINE = {
-    "H": "CNC",
-    "M": "Milling",
-    "L": "Lathe",
-}
 EXPECTED_OUTPUT = {
-    "CNC": 4,
-    "Lathe": 3,
-    "Milling": 2,
+    "H": 4,
+    "M": 3,
+    "L": 2,
 }
 FAILURE_LABELS = {
     "TWF": "Tool wear failure",
@@ -55,8 +50,7 @@ def load_ai4i_dataset():
         "Tool wear [min]": "tool_wear_min",
         "Machine failure": "machine_failure",
     })
-    df["machine_type"] = df["product_type"].map(PRODUCT_TYPE_TO_MACHINE)
-    df = df[df["machine_type"].notna()].copy()
+    df["machine_type"] = df["product_type"]
     df["air_temp_c"] = df["air_temperature_k"].map(_kelvin_to_celsius)
     df["process_temp_c"] = df["process_temperature_k"].map(_kelvin_to_celsius)
     df["power_kw"] = df["torque_nm"] * df["rotational_speed_rpm"] / 9550
@@ -166,7 +160,7 @@ def _get_ai4i_live_data(replay_state):
     cursors = replay_state.setdefault("ai4i_cursors", {})
     rows = []
 
-    for product_type, machine in PRODUCT_TYPE_TO_MACHINE.items():
+    for product_type in ["H", "M", "L"]:
         machine_rows = dataset[dataset["product_type"] == product_type].reset_index(drop=True)
         cursor = cursors.get(product_type)
         if cursor is None:
@@ -201,7 +195,7 @@ def _advance_state(state):
 
 def _get_synthetic_live_data(health_state):
     now = datetime.datetime.now()
-    machine_types = ["CNC", "Lathe", "Milling"]
+    machine_types = ["H", "M", "L"]
     data = []
 
     for machine in machine_types:
