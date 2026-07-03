@@ -324,18 +324,19 @@ with chart_row[1]:
 
 st.markdown(f"### Recent Data for {selected_machine}")
 selected_machine_df = history_df[history_df["machine_type"] == selected_machine]
-st.dataframe(
-    selected_machine_df.tail(10).style.format({
-        "oil_temp": "{:.1f}",
-        "hydraulic_temp": "{:.1f}",
-        "bearing_temp": "{:.1f}",
-        "vibration": "{:.2f}",
-        "production_efficiency": "{:.2f}",
-        "defect_rate": "{:.2f}",
-        "energy_usage": "{:.2f}",
-        "energy_cost": "${:.2f}",
-    })
-)
+recent_data = selected_machine_df.tail(10).copy()
+rounded_columns = {
+    "oil_temp": 1,
+    "hydraulic_temp": 1,
+    "bearing_temp": 1,
+    "vibration": 2,
+    "production_efficiency": 2,
+    "defect_rate": 2,
+    "energy_usage": 2,
+}
+recent_data = recent_data.round(rounded_columns)
+recent_data["energy_cost"] = recent_data["energy_cost"].map("${:.2f}".format)
+st.dataframe(recent_data, use_container_width=True)
 
 st.markdown("Refreshing in 10 seconds...")
 time.sleep(10)
