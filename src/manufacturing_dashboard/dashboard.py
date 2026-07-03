@@ -1,4 +1,3 @@
-import time
 from pathlib import Path
 
 import pandas as pd
@@ -11,7 +10,6 @@ from manufacturing_dashboard.data import DATASET_PATH, get_live_data, load_ai4i_
 from manufacturing_dashboard.model import AI4I_FEATURES, MODEL_TARGET, get_model_diagnostics, predict_fault
 
 
-DEFAULT_REFRESH_INTERVAL_SECONDS = 10
 ASSET_DIR = Path(__file__).resolve().parents[2] / "assets"
 
 st.set_page_config("Manufacturing Dashboard", layout="wide")
@@ -150,29 +148,23 @@ if "refresh_live_data" not in st.session_state:
     st.session_state.refresh_live_data = True
 if "machine_health_state" not in st.session_state:
     st.session_state.machine_health_state = {}
-if "replay_running" not in st.session_state:
-    st.session_state.replay_running = True
-if "refresh_interval_seconds" not in st.session_state:
-    st.session_state.refresh_interval_seconds = DEFAULT_REFRESH_INTERVAL_SECONDS
 if "step_once" not in st.session_state:
     st.session_state.step_once = False
 
 st.title("Manufacturing Operations Dashboard")
-control_cols = st.columns([1, 1, 1, 1])
+control_cols = st.columns([1, 1, 2])
 with control_cols[0]:
-    st.toggle("Replay running", key="replay_running")
-with control_cols[1]:
-    st.slider("Replay speed", 3, 30, key="refresh_interval_seconds", help="Seconds between live test-row updates.")
-with control_cols[2]:
     if st.button("Step one row", use_container_width=True):
         st.session_state.step_once = True
         st.session_state.refresh_live_data = True
-with control_cols[3]:
+with control_cols[1]:
     if st.button("Reset replay", use_container_width=True):
         st.session_state.history_df = pd.DataFrame()
         st.session_state.machine_health_state = {}
         st.session_state.refresh_live_data = True
         st.session_state.step_once = True
+with control_cols[2]:
+    st.caption("Replay advances only when you step or reset, so the page stays visible while you inspect predictions.")
 
 should_load_live_data = (
     "live_df" not in st.session_state
@@ -539,11 +531,4 @@ recent_data = recent_data.round(rounded_columns)
 recent_data["energy_cost"] = recent_data["energy_cost"].map("${:.2f}".format)
 st.dataframe(recent_data, use_container_width=True)
 
-if st.session_state.replay_running:
-    refresh_interval = int(st.session_state.refresh_interval_seconds)
-    st.markdown(f"Refreshing in {refresh_interval} seconds...")
-    time.sleep(refresh_interval)
-    st.session_state.refresh_live_data = True
-    st.rerun()
-else:
-    st.info("Replay paused. Use Step one row to test the next held-out record.")
+st.info("Replay is paused after each render. Use Step one row to test the next held-out record.")
