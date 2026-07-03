@@ -10,6 +10,8 @@ from fault_predictor import predict_fault
 from maintenance_analytics import calculate_maintenance_insights
 
 
+REFRESH_INTERVAL_SECONDS = 10
+
 st.set_page_config("Manufacturing Dashboard", layout="wide")
 
 st.markdown("""
@@ -117,9 +119,18 @@ def create_gauge(value, green_range, orange_range, red_range, unit="deg C"):
 
 if "history_df" not in st.session_state:
     st.session_state.history_df = pd.DataFrame()
+if "refresh_live_data" not in st.session_state:
+    st.session_state.refresh_live_data = True
 
-live_df = get_live_data()
-st.session_state.history_df = pd.concat([st.session_state.history_df, live_df], ignore_index=True)
+if st.session_state.refresh_live_data or "live_df" not in st.session_state:
+    st.session_state.live_df = get_live_data()
+    st.session_state.history_df = pd.concat(
+        [st.session_state.history_df, st.session_state.live_df],
+        ignore_index=True,
+    )
+    st.session_state.refresh_live_data = False
+
+live_df = st.session_state.live_df.copy()
 history_df = st.session_state.history_df.copy()
 maintenance_insights = calculate_maintenance_insights(live_df, history_df)
 
@@ -203,8 +214,13 @@ st.markdown(
 
 analytics_row = st.columns([1, 1])
 with analytics_row[0]:
+    maintenance_chart_df = (
+        maintenance_insights.set_index("machine_type")
+        .loc[machine_options]
+        .reset_index()
+    )
     risk_chart = px.bar(
-        maintenance_insights,
+        maintenance_chart_df,
         x="machine_type",
         y="maintenance_risk_pct",
         color="risk_band",
@@ -216,6 +232,7 @@ with analytics_row[0]:
         },
         title="Predicted Maintenance Risk by Machine",
         labels={"maintenance_risk_pct": "Risk (%)", "machine_type": "Machine"},
+        category_orders={"machine_type": machine_options},
     )
     risk_chart.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
@@ -338,6 +355,7 @@ recent_data = recent_data.round(rounded_columns)
 recent_data["energy_cost"] = recent_data["energy_cost"].map("${:.2f}".format)
 st.dataframe(recent_data, use_container_width=True)
 
-st.markdown("Refreshing in 10 seconds...")
-time.sleep(10)
+st.markdown(f"Refreshing in {REFRESH_INTERVAL_SECONDS} seconds...")
+time.sleep(REFRESH_INTERVAL_SECONDS)
+st.session_state.refresh_live_data = True
 st.rerun()
