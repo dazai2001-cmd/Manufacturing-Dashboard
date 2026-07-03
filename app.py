@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from data_simulator import DATASET_PATH, get_live_data, load_ai4i_dataset
-from fault_predictor import predict_fault
+from fault_predictor import AI4I_FEATURES, MODEL_NAME, MODEL_TARGET, predict_fault
 from maintenance_analytics import calculate_maintenance_insights
 
 
@@ -136,11 +136,8 @@ live_df = st.session_state.live_df.copy()
 history_df = st.session_state.history_df.copy()
 maintenance_insights = calculate_maintenance_insights(live_df, history_df)
 
-total_units = history_df["units_produced"].sum()
-avg_eff = round(history_df["production_efficiency"].mean(), 2)
-avg_defect = round(history_df["defect_rate"].mean(), 2)
-total_energy = round(history_df["energy_usage"].sum(), 2)
-total_cost = round(history_df["energy_cost"].sum(), 2)
+using_ai4i = {"machine_failure", "tool_wear_min", "torque_nm", "process_temp_c"}.issubset(history_df.columns)
+avg_predicted_risk = round(maintenance_insights["maintenance_risk_pct"].mean(), 1)
 
 st.title("Manufacturing Operations Dashboard")
 if not load_ai4i_dataset().empty:
@@ -148,16 +145,38 @@ if not load_ai4i_dataset().empty:
 st.markdown("### Overall Manufacturing KPIs")
 
 kpi_cols = st.columns(5)
-with kpi_cols[0]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_units}</div><div class='metric-label'>Total Units Produced</div></div>", unsafe_allow_html=True)
-with kpi_cols[1]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_eff:.1f}%</div><div class='metric-label'>Avg Efficiency</div></div>", unsafe_allow_html=True)
-with kpi_cols[2]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_defect:.2f}%</div><div class='metric-label'>Avg Defect Rate</div></div>", unsafe_allow_html=True)
-with kpi_cols[3]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_energy:.1f} kWh</div><div class='metric-label'>Total Energy Used</div></div>", unsafe_allow_html=True)
-with kpi_cols[4]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
+if using_ai4i:
+    records_replayed = len(history_df)
+    observed_failure_rate = history_df["machine_failure"].mean() * 100
+    avg_tool_wear = history_df["tool_wear_min"].mean()
+    avg_torque = history_df["torque_nm"].mean()
+    avg_process_temp = history_df["process_temp_c"].mean()
+    with kpi_cols[0]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{records_replayed}</div><div class='metric-label'>AI4I Records Replayed</div></div>", unsafe_allow_html=True)
+    with kpi_cols[1]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{observed_failure_rate:.1f}%</div><div class='metric-label'>Observed Failure Rate</div></div>", unsafe_allow_html=True)
+    with kpi_cols[2]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_tool_wear:.0f} min</div><div class='metric-label'>Avg Tool Wear</div></div>", unsafe_allow_html=True)
+    with kpi_cols[3]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_torque:.1f} Nm</div><div class='metric-label'>Avg Torque</div></div>", unsafe_allow_html=True)
+    with kpi_cols[4]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_predicted_risk:.1f}%</div><div class='metric-label'>Avg Predicted Risk</div></div>", unsafe_allow_html=True)
+else:
+    total_units = history_df["units_produced"].sum()
+    avg_eff = round(history_df["production_efficiency"].mean(), 2)
+    avg_defect = round(history_df["defect_rate"].mean(), 2)
+    total_energy = round(history_df["energy_usage"].sum(), 2)
+    total_cost = round(history_df["energy_cost"].sum(), 2)
+    with kpi_cols[0]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_units}</div><div class='metric-label'>Total Units Produced</div></div>", unsafe_allow_html=True)
+    with kpi_cols[1]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_eff:.1f}%</div><div class='metric-label'>Avg Efficiency</div></div>", unsafe_allow_html=True)
+    with kpi_cols[2]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_defect:.2f}%</div><div class='metric-label'>Avg Defect Rate</div></div>", unsafe_allow_html=True)
+    with kpi_cols[3]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_energy:.1f} kWh</div><div class='metric-label'>Total Energy Used</div></div>", unsafe_allow_html=True)
+    with kpi_cols[4]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
 
 machine_options = live_df["machine_type"].unique().tolist()
 selected_machine = st.selectbox("Select Machine for Gauges & Alerts", machine_options)
@@ -168,29 +187,49 @@ selected_insight = maintenance_insights[maintenance_insights["machine_type"] == 
 st.markdown("### Selected Machine Stats (Total & Avg)")
 
 machine_kpi_cols = st.columns(5)
-with machine_kpi_cols[0]:
-    total_units_m = selected_machine_df["units_produced"].sum()
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_units_m}</div><div class='metric-label'>Total Units Produced</div></div>", unsafe_allow_html=True)
-with machine_kpi_cols[1]:
-    avg_eff_m = selected_machine_df["production_efficiency"].mean()
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_eff_m:.1f}%</div><div class='metric-label'>Avg Efficiency</div></div>", unsafe_allow_html=True)
-with machine_kpi_cols[2]:
-    avg_defect_m = selected_machine_df["defect_rate"].mean()
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_defect_m:.2f}%</div><div class='metric-label'>Avg Defect Rate</div></div>", unsafe_allow_html=True)
-with machine_kpi_cols[3]:
-    total_energy_m = selected_machine_df["energy_usage"].sum()
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_energy_m:.2f} kWh</div><div class='metric-label'>Total Energy Used</div></div>", unsafe_allow_html=True)
-with machine_kpi_cols[4]:
-    total_cost_m = selected_machine_df["energy_cost"].sum()
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost_m:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
+if using_ai4i:
+    selected_risk = float(selected_insight["maintenance_risk_pct"])
+    selected_failure_rate = selected_machine_df["machine_failure"].mean() * 100
+    latest_failure_type = str(selected_row.get("failure_type", "None"))
+    with machine_kpi_cols[0]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{len(selected_machine_df)}</div><div class='metric-label'>Records Replayed</div></div>", unsafe_allow_html=True)
+    with machine_kpi_cols[1]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_failure_rate:.1f}%</div><div class='metric-label'>Observed Failure Rate</div></div>", unsafe_allow_html=True)
+    with machine_kpi_cols[2]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_machine_df['tool_wear_min'].mean():.0f} min</div><div class='metric-label'>Avg Tool Wear</div></div>", unsafe_allow_html=True)
+    with machine_kpi_cols[3]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_row['power_kw']:.2f} kW</div><div class='metric-label'>Latest Power Load</div></div>", unsafe_allow_html=True)
+    with machine_kpi_cols[4]:
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_risk:.0f}%</div><div class='metric-label'>Predicted Risk</div></div>", unsafe_allow_html=True)
+    if latest_failure_type != "None":
+        st.markdown(f"<div class='alert-box'>{selected_machine} replay row is labeled: {latest_failure_type}</div>", unsafe_allow_html=True)
+else:
+    with machine_kpi_cols[0]:
+        total_units_m = selected_machine_df["units_produced"].sum()
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_units_m}</div><div class='metric-label'>Total Units Produced</div></div>", unsafe_allow_html=True)
+    with machine_kpi_cols[1]:
+        avg_eff_m = selected_machine_df["production_efficiency"].mean()
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_eff_m:.1f}%</div><div class='metric-label'>Avg Efficiency</div></div>", unsafe_allow_html=True)
+    with machine_kpi_cols[2]:
+        avg_defect_m = selected_machine_df["defect_rate"].mean()
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{avg_defect_m:.2f}%</div><div class='metric-label'>Avg Defect Rate</div></div>", unsafe_allow_html=True)
+    with machine_kpi_cols[3]:
+        total_energy_m = selected_machine_df["energy_usage"].sum()
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_energy_m:.2f} kWh</div><div class='metric-label'>Total Energy Used</div></div>", unsafe_allow_html=True)
+    with machine_kpi_cols[4]:
+        total_cost_m = selected_machine_df["energy_cost"].sum()
+        st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost_m:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
 
 probability, downtime_hours, explanation = predict_fault(selected_row, history_df)
 st.markdown("### AI Fault Prediction")
-ai_cols = st.columns(2)
+ai_cols = st.columns(3)
 with ai_cols[0]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{probability * 100:.1f}%</div><div class='metric-label'>Failure Probability</div></div>", unsafe_allow_html=True)
 with ai_cols[1]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{downtime_hours:.1f} hrs</div><div class='metric-label'>Estimated Downtime</div></div>", unsafe_allow_html=True)
+with ai_cols[2]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{MODEL_NAME}</div><div class='metric-label'>{MODEL_TARGET}</div></div>", unsafe_allow_html=True)
+st.caption("Model features: " + ", ".join(AI4I_FEATURES if using_ai4i else ["oil_temp", "hydraulic_temp", "bearing_temp", "vibration"]))
 st.markdown(f"**Explanation:** {explanation}")
 
 st.markdown("### Predictive Prescriptive Maintenance Analytics")

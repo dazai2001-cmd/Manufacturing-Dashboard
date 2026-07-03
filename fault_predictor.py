@@ -1,12 +1,14 @@
+from functools import lru_cache
+
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
 
 from data_simulator import FAILURE_LABELS, load_ai4i_dataset
 
 
+MODEL_NAME = "Random Forest"
+MODEL_TARGET = "Target: Machine failure"
 AI4I_FEATURES = [
     "air_temperature_k",
     "process_temperature_k",
@@ -27,37 +29,50 @@ FAULT_THRESHOLDS = {
 }
 
 
-def _model_training_frame(history_df):
-    ai4i_df = load_ai4i_dataset()
-    if not ai4i_df.empty:
-        return ai4i_df, AI4I_FEATURES, "machine_failure"
-    if all(column in history_df.columns for column in DERIVED_FEATURES):
-        data = history_df.copy()
-        data["fault"] = (
-            (data["oil_temp"] > FAULT_THRESHOLDS["oil_temp"])
-            | (data["vibration"] > FAULT_THRESHOLDS["vibration"])
-            | (data["bearing_temp"] > FAULT_THRESHOLDS["bearing_temp"])
-        ).astype(int)
-        return data, DERIVED_FEATURES, "fault"
-    return pd.DataFrame(), [], ""
+@lru_cache(maxsize=1)
+def _train_ai4i_model():
+    data = load_ai4i_dataset()
+    if data.empty:
+        return None
+
+    training_data = data.dropna(subset=AI4I_FEATURES + ["machine_failure"])
+    if training_data["machine_failure"].nunique() < 2:
+        return None
+
+    model = RandomForestClassifier(
+        n_estimators=250,
+        max_depth=8,
+        min_samples_leaf=5,
+        class_weight="balanced_subsample",
+        random_state=42,
+    )
+    model.fit(training_data[AI4I_FEATURES], training_data["machine_failure"])
+    return model
 
 
-def _train_model(history_df):
-    data, features, target = _model_training_frame(history_df)
-    if data.empty or not features or target not in data:
-        return None, features
-    data = data.dropna(subset=features + [target])
-    if data[target].nunique() < 2:
-        return None, features
-    try:
-        model = make_pipeline(
-            StandardScaler(),
-            LogisticRegression(max_iter=1000, class_weight="balanced"),
-        )
-        model.fit(data[features], data[target])
-        return model, features
-    except Exception:
-        return None, features
+def _train_threshold_fallback(history_df):
+    if not all(column in history_df.columns for column in DERIVED_FEATURES):
+        return None
+
+    data = history_df.copy()
+    data["fault"] = (
+        (data["oil_temp"] > FAULT_THRESHOLDS["oil_temp"])
+        | (data["vibration"] > FAULT_THRESHOLDS["vibration"])
+        | (data["bearing_temp"] > FAULT_THRESHOLDS["bearing_temp"])
+    ).astype(int)
+    data = data.dropna(subset=DERIVED_FEATURES + ["fault"])
+    if data["fault"].nunique() < 2:
+        return None
+
+    model = RandomForestClassifier(
+        n_estimators=150,
+        max_depth=6,
+        min_samples_leaf=3,
+        class_weight="balanced_subsample",
+        random_state=42,
+    )
+    model.fit(data[DERIVED_FEATURES], data["fault"])
+    return model
 
 
 def _ai4i_explanation(selected_row):
@@ -97,20 +112,23 @@ def _threshold_explanation(selected_row):
 
 
 def predict_fault(selected_row: pd.Series, history_df: pd.DataFrame):
-    """Predict fault probability and downtime for the selected machine."""
-    model, features = _train_model(history_df)
-    if model is None or not features:
+    """Predict failure probability and estimated downtime for one reading."""
+    if all(feature in selected_row for feature in AI4I_FEATURES) and not load_ai4i_dataset().empty:
+        model = _train_ai4i_model()
+        features = AI4I_FEATURES
+        explanation = _ai4i_explanation(selected_row)
+    else:
+        model = _train_threshold_fallback(history_df)
+        features = DERIVED_FEATURES
+        explanation = _threshold_explanation(selected_row)
+
+    if model is None:
         return 0.0, 0.5, "Insufficient data to train predictive model"
 
     feature_frame = selected_row[features].astype(float).to_frame().T
     probability = float(model.predict_proba(feature_frame)[0, 1])
-    downtime = max(0.5, probability * 6)
-
-    if all(feature in selected_row for feature in AI4I_FEATURES):
-        explanation = _ai4i_explanation(selected_row)
-    else:
-        explanation = _threshold_explanation(selected_row)
-
     if np.isnan(probability):
         return 0.0, 0.5, "Prediction unavailable for this reading"
+
+    downtime = max(0.5, probability * 6)
     return probability, downtime, explanation
