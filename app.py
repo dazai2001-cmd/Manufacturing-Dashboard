@@ -1,16 +1,17 @@
-
-import streamlit as st
-import plotly.graph_objects as go
-import plotly.express as px
-import pandas as pd
-from data_simulator import get_live_data
-from fault_predictor import predict_fault
 import time
 
-# --- Page Config ---
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+from data_simulator import get_live_data
+from fault_predictor import predict_fault
+from maintenance_analytics import calculate_maintenance_insights
+
+
 st.set_page_config("Manufacturing Dashboard", layout="wide")
 
-# --- Custom Glassmorphic Styling ---
 st.markdown("""
     <style>
     body, .stApp {
@@ -26,7 +27,7 @@ st.markdown("""
     }
     .metric-card {
         background: rgba(255, 255, 255, 0.05);
-        border-radius: 16px;
+        border-radius: 8px;
         padding: 1.2rem;
         margin: 0.5rem 0;
         text-align: center;
@@ -50,8 +51,27 @@ st.markdown("""
         margin-bottom: 1.5rem;
         box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     }
+    .analytics-card {
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255,255,255,0.13);
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0.5rem 0 1rem 0;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.28);
+    }
+    .analytics-title {
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 16px;
+        margin-bottom: 0.35rem;
+    }
+    .analytics-copy {
+        color: #e8e5ff;
+        font-size: 14px;
+        line-height: 1.45;
+    }
     .stPlotlyChart {
-        border-radius: 16px;
+        border-radius: 8px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     }
     table {
@@ -62,54 +82,56 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Gauge Function ---
-def create_gauge(value, green_range, orange_range, red_range, unit='°C'):
+
+def create_gauge(value, green_range, orange_range, red_range, unit="deg C"):
     if value <= green_range[1]:
         bar_color = "#d0aaff"
     elif value <= orange_range[1]:
         bar_color = "#b07bfa"
     else:
         bar_color = "#9446ff"
+
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
-        number={'suffix': f" {unit}", 'font': {'size': 24, 'color': "white"}},
-        domain={'x': [0, 1], 'y': [0, 1]},
+        number={"suffix": f" {unit}", "font": {"size": 24, "color": "white"}},
+        domain={"x": [0, 1], "y": [0, 1]},
         gauge={
-            'axis': {'range': [None, red_range[1]], 'tickcolor': "#888", 'tickwidth': 1.5},
-            'bar': {'color': bar_color, 'thickness': 0.25},
-            'bgcolor': "rgba(0,0,0,0.1)",
-            'borderwidth': 0,
-            'steps': [],
-            'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': red_range[0]}
-        }
+            "axis": {"range": [None, red_range[1]], "tickcolor": "#888", "tickwidth": 1.5},
+            "bar": {"color": bar_color, "thickness": 0.25},
+            "bgcolor": "rgba(0,0,0,0.1)",
+            "borderwidth": 0,
+            "steps": [],
+            "threshold": {"line": {"color": "white", "width": 4}, "thickness": 0.75, "value": red_range[0]},
+        },
     ))
     fig.update_traces(gauge_shape="angular")
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"), height=250, margin=dict(t=20, b=10, l=0, r=0))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"),
+        height=250,
+        margin=dict(t=20, b=10, l=0, r=0),
+    )
     return fig
 
-# --- Initialize History ---
+
 if "history_df" not in st.session_state:
     st.session_state.history_df = pd.DataFrame()
 
-# --- Get and Append Live Data ---
 live_df = get_live_data()
 st.session_state.history_df = pd.concat([st.session_state.history_df, live_df], ignore_index=True)
 history_df = st.session_state.history_df.copy()
+maintenance_insights = calculate_maintenance_insights(live_df, history_df)
 
-# --- Aggregate Overall Metrics from History ---
 total_units = history_df["units_produced"].sum()
 avg_eff = round(history_df["production_efficiency"].mean(), 2)
 avg_defect = round(history_df["defect_rate"].mean(), 2)
 total_energy = round(history_df["energy_usage"].sum(), 2)
 total_cost = round(history_df["energy_cost"].sum(), 2)
 
-# --- Title ---
-st.title("🏭 Manufacturing Operations Dashboard")
+st.title("Manufacturing Operations Dashboard")
+st.markdown("### Overall Manufacturing KPIs")
 
-st.markdown("### 📊 Overall Manufacturing KPIs")
-
-# --- Global KPI Cards ---
 kpi_cols = st.columns(5)
 with kpi_cols[0]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{total_units}</div><div class='metric-label'>Total Units Produced</div></div>", unsafe_allow_html=True)
@@ -122,14 +144,13 @@ with kpi_cols[3]:
 with kpi_cols[4]:
     st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
 
-# --- Machine Selection ---
 machine_options = live_df["machine_type"].unique().tolist()
-selected_machine = st.selectbox("🛠️ Select Machine for Gauges & Alerts", machine_options)
+selected_machine = st.selectbox("Select Machine for Gauges & Alerts", machine_options)
 selected_row = live_df[live_df["machine_type"] == selected_machine].iloc[0]
-
-# --- Selected Machine KPI Cards ---
 selected_machine_df = history_df[history_df["machine_type"] == selected_machine]
-st.markdown("### 📌 Selected Machine Stats (Total & Avg)")
+selected_insight = maintenance_insights[maintenance_insights["machine_type"] == selected_machine].iloc[0]
+
+st.markdown("### Selected Machine Stats (Total & Avg)")
 
 machine_kpi_cols = st.columns(5)
 with machine_kpi_cols[0]:
@@ -148,26 +169,98 @@ with machine_kpi_cols[4]:
     total_cost_m = selected_machine_df["energy_cost"].sum()
     st.markdown(f"<div class='metric-card'><div class='metric-value'>${total_cost_m:.2f}</div><div class='metric-label'>Total Energy Cost</div></div>", unsafe_allow_html=True)
 
-# --- AI Fault Prediction ---
 probability, downtime_hours, explanation = predict_fault(selected_row, history_df)
-st.markdown("### 🧠 AI Fault Prediction")
+st.markdown("### AI Fault Prediction")
 ai_cols = st.columns(2)
 with ai_cols[0]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{probability*100:.1f}%</div><div class='metric-label'>Failure Probability</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{probability * 100:.1f}%</div><div class='metric-label'>Failure Probability</div></div>", unsafe_allow_html=True)
 with ai_cols[1]:
-    st.markdown(f"<div class='metric-card'><div class='metric-value'>{downtime_hours:.1f} hrs</div><div class='metric-label'>Est. Downtime</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{downtime_hours:.1f} hrs</div><div class='metric-label'>Estimated Downtime</div></div>", unsafe_allow_html=True)
 st.markdown(f"**Explanation:** {explanation}")
 
-# --- Alerts ---
+st.markdown("### Prescriptive Maintenance Analytics")
+
+analytics_cols = st.columns(4)
+with analytics_cols[0]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['maintenance_risk_pct']}%</div><div class='metric-label'>Maintenance Risk</div></div>", unsafe_allow_html=True)
+with analytics_cols[1]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['risk_band']}</div><div class='metric-label'>Risk Band</div></div>", unsafe_allow_html=True)
+with analytics_cols[2]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['confidence_pct']}%</div><div class='metric-label'>Prediction Confidence</div></div>", unsafe_allow_html=True)
+with analytics_cols[3]:
+    st.markdown(f"<div class='metric-card'><div class='metric-value'>{selected_insight['time_to_service']}</div><div class='metric-label'>Service Window</div></div>", unsafe_allow_html=True)
+
+st.markdown(
+    f"""
+    <div class='analytics-card'>
+        <div class='analytics-title'>Likely reason: {selected_insight['predicted_reason']}</div>
+        <div class='analytics-copy'><strong>Evidence:</strong> {selected_insight['evidence']}</div>
+        <div class='analytics-copy'><strong>Recommended action:</strong> {selected_insight['prescribed_action']}</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+analytics_row = st.columns([1, 1])
+with analytics_row[0]:
+    risk_chart = px.bar(
+        maintenance_insights,
+        x="machine_type",
+        y="maintenance_risk_pct",
+        color="risk_band",
+        color_discrete_map={
+            "Normal": "#69d2a3",
+            "Watch": "#f7d154",
+            "High": "#ff9f43",
+            "Critical": "#ff4d4d",
+        },
+        title="Predicted Maintenance Risk by Machine",
+        labels={"maintenance_risk_pct": "Risk (%)", "machine_type": "Machine"},
+    )
+    risk_chart.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font_color="white",
+        title_font=dict(size=16),
+        yaxis=dict(range=[0, 100]),
+        margin=dict(t=40, b=20),
+    )
+    st.plotly_chart(risk_chart, use_container_width=True)
+
+with analytics_row[1]:
+    st.dataframe(
+        maintenance_insights[[
+            "machine_type",
+            "maintenance_risk_pct",
+            "risk_band",
+            "predicted_reason",
+            "time_to_service",
+            "prescribed_action",
+        ]].rename(columns={
+            "machine_type": "Machine",
+            "maintenance_risk_pct": "Risk %",
+            "risk_band": "Band",
+            "predicted_reason": "Predicted Reason",
+            "time_to_service": "Service Window",
+            "prescribed_action": "Recommended Action",
+        }),
+        hide_index=True,
+        use_container_width=True,
+    )
+
 alert_conditions = []
 if selected_row["oil_temp"] > 110:
-    alert_conditions.append(f"⚠️ {selected_machine} - Oil temperature is critically high!")
+    alert_conditions.append(f"{selected_machine} - Oil temperature is critically high.")
 if selected_row["vibration"] > 10:
-    alert_conditions.append(f"⚠️ {selected_machine} - Abnormal vibration levels detected!")
+    alert_conditions.append(f"{selected_machine} - Abnormal vibration levels detected.")
 if selected_row["bearing_temp"] > 115:
-    alert_conditions.append(f"⚠️ {selected_machine} - Bearing temperature is too high!")
+    alert_conditions.append(f"{selected_machine} - Bearing temperature is too high.")
+if selected_insight["maintenance_risk_pct"] >= 50:
+    alert_conditions.append(
+        f"Prescriptive analytics recommends maintenance for {selected_machine}: {selected_insight['predicted_reason']}"
+    )
 
-sound_enabled = st.checkbox("🔔 Enable Sound Alerts", value=False, help="Play audio when alerts are triggered")
+sound_enabled = st.checkbox("Enable Sound Alerts", value=False, help="Play audio when alerts are triggered")
 
 if alert_conditions:
     if sound_enabled:
@@ -175,7 +268,6 @@ if alert_conditions:
     for msg in alert_conditions:
         st.markdown(f"<div class='alert-box'>{msg}</div>", unsafe_allow_html=True)
 
-# --- Gauges ---
 gauge_cols_1 = st.columns(2)
 gauge_cols_2 = st.columns(2)
 with gauge_cols_1[0]:
@@ -191,19 +283,23 @@ with gauge_cols_2[1]:
     st.plotly_chart(create_gauge(selected_row["bearing_temp"], (40, 80), (80, 95), (95, 120)), use_container_width=True)
     st.markdown("<div class='gauge-title'>Bearing Temp</div>", unsafe_allow_html=True)
 
-# --- Charts ---
 chart_row = st.columns(2)
 with chart_row[0]:
     today = pd.Timestamp.now().normalize()
     today_df = history_df[history_df["timestamp"] >= today]
     daily_prod = today_df.groupby("machine_type")["units_produced"].sum().reset_index()
     fig_bar = px.bar(daily_prod, x="machine_type", y="units_produced", title="Daily Production by Machine Type")
-    fig_bar.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", title_font=dict(size=16), margin=dict(t=40, b=20))
+    fig_bar.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font_color="white",
+        title_font=dict(size=16),
+        margin=dict(t=40, b=20),
+    )
     st.plotly_chart(fig_bar, use_container_width=True)
 
 with chart_row[1]:
-    st.markdown(f"### 📈 Efficiency Trend for {selected_machine}")
+    st.markdown(f"### Efficiency Trend for {selected_machine}")
     history_df["timestamp"] = pd.to_datetime(history_df["timestamp"])
     machine_df = history_df[history_df["machine_type"] == selected_machine].sort_values("timestamp")
 
@@ -213,21 +309,20 @@ with chart_row[1]:
             x="timestamp",
             y="production_efficiency",
             title=f"{selected_machine} Production Efficiency Over Time",
-            labels={"production_efficiency": "Efficiency (%)", "timestamp": "Time"}
+            labels={"production_efficiency": "Efficiency (%)", "timestamp": "Time"},
         )
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font_color="white",
             title_font=dict(size=16),
-            margin=dict(t=30, b=20)
+            margin=dict(t=30, b=20),
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No data available yet for this machine.")
 
-# --- Table ---
-st.markdown(f"### 📋 Recent Data for {selected_machine}")
+st.markdown(f"### Recent Data for {selected_machine}")
 selected_machine_df = history_df[history_df["machine_type"] == selected_machine]
 st.dataframe(
     selected_machine_df.tail(10).style.format({
@@ -238,12 +333,10 @@ st.dataframe(
         "production_efficiency": "{:.2f}",
         "defect_rate": "{:.2f}",
         "energy_usage": "{:.2f}",
-        "energy_cost": "${:.2f}"
+        "energy_cost": "${:.2f}",
     })
 )
 
-
-# --- Auto-refresh ---
 st.markdown("Refreshing in 10 seconds...")
 time.sleep(10)
 st.rerun()
