@@ -107,6 +107,7 @@ def normalize_prediction_result(prediction_result):
         "predicted_failure": probability >= 0.5,
         "feature_contributions": [],
         "model_name": "Runtime Model",
+        "explanation_method": "legacy tuple fallback",
     }
 
 
@@ -304,6 +305,11 @@ st.markdown(f"**Model explanation:** {explanation}")
 
 feature_contributions = prediction.get("feature_contributions", [])
 if feature_contributions:
+    explanation_method = prediction.get("explanation_method", "local feature contribution")
+    st.caption(
+        f"Explanation method: {explanation_method}. Positive values push the prediction toward failure; "
+        "negative values push it toward normal operation."
+    )
     contribution_df = pd.DataFrame(feature_contributions[:5])
     contribution_df["Contribution"] = contribution_df["contribution"].map(lambda value: f"{value * 100:+.1f} pp")
     contribution_df["Current Value"] = contribution_df.apply(

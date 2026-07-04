@@ -29,7 +29,8 @@ The dashboard is intentionally set up so the model predicts first, and the actua
 - Tuned failure threshold
 - Random Forest failure probability prediction
 - Prediction-vs-actual evaluation cards
-- Local feature contribution explanations
+- SHAP feature explanations when `shap` is installed
+- Probability-delta explanation fallback when SHAP is unavailable
 - Prescriptive maintenance reasons and recommended actions
 - Estimated downtime, failure cost, preventive cost, and cost avoided
 - Streamlit config for localhost preview stability
@@ -171,7 +172,8 @@ Responsibilities:
 - apply the tuned threshold
 - estimate downtime
 - generate model-facing explanation text
-- compute local feature contribution values against training baselines
+- compute SHAP feature contributions when `shap` is installed
+- fall back to local probability-delta feature contributions when SHAP is unavailable
 - provide model diagnostics to the dashboard
 
 ### `src/manufacturing_dashboard/analytics.py`
@@ -217,7 +219,7 @@ It displays:
 - predictive failure probability
 - tuned threshold
 - model diagnostics
-- feature contribution explanation table
+- SHAP or fallback feature contribution explanation table
 - predicted-vs-actual test outcome
 - prescriptive maintenance risk
 - cost impact estimates
@@ -341,6 +343,8 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+`requirements.txt` includes `shap`. If SHAP is not installed in the active Python environment, the dashboard still runs and uses the probability-delta fallback explanation method.
+
 Start the dashboard from the repository root:
 
 ```powershell
@@ -411,6 +415,30 @@ Why is maintenance needed, when should it happen, and what action should be take
 
 The machine learning model and the prescriptive layer are intentionally separate. The model predicts failure probability from AI4I input features. The prescriptive layer turns current readings, trends, thresholds, and costs into a maintenance recommendation.
 
+## SHAP Explainability
+
+The dashboard now prefers SHAP for model explanations.
+
+For the saved Random Forest model, the app uses:
+
+```text
+shap.TreeExplainer
+```
+
+SHAP explains how each model feature pushes the selected row toward failure or toward normal operation.
+
+The dashboard shows the top feature impacts for the selected live replay row. Positive values push the prediction toward failure. Negative values push the prediction toward normal operation.
+
+If SHAP is not installed, the app does not fail. It falls back to a local probability-delta method that replaces one feature at a time with its training baseline and measures how much the predicted failure probability changes.
+
+Explanation priority:
+
+```text
+1. SHAP TreeExplainer
+2. Probability-delta fallback
+3. Runtime threshold rules for synthetic fallback data
+```
+
 ## Why Random Forest Instead Of LSTM?
 
 AI4I is tabular process data, not continuous per-machine time-series telemetry.
@@ -479,7 +507,8 @@ If the dataset is missing, the app falls back to synthetic machine data, but the
 - AI4I is not a true machine time-series dataset.
 - The replay simulates live data by stepping through held-out test rows.
 - The prescriptive reason layer is rule-based and interpretable, not trained directly from maintenance work orders.
-- Feature contribution explanations are local probability-delta explanations, not full SHAP values.
+- SHAP requires the `shap` package to be installed in the active Python environment.
+- If SHAP is unavailable, feature contribution explanations use the probability-delta fallback.
 - Cost values are illustrative assumptions for dashboard demonstration.
 
 ## Suggested Next Improvements
@@ -487,7 +516,7 @@ If the dataset is missing, the app falls back to synthetic machine data, but the
 - Add real sensor time-series data.
 - Add maintenance work-order history.
 - Add operator notes and downtime reason codes.
-- Add SHAP if exact model explainability is required.
+- Add a dedicated SHAP summary view for global model behavior.
 - Add a database for persistent machine history.
 - Add automated tests around train/test split integrity.
 - Add a CI workflow that runs model training smoke tests and Streamlit import checks.

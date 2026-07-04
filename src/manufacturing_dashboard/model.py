@@ -230,32 +230,100 @@ def _local_feature_contributions(model, selected_row, features, baseline_values,
             "baseline": baseline_value,
             "contribution": float(contribution),
             "direction": "increased" if contribution >= 0 else "reduced",
+            "method": "Probability delta",
         })
 
     return sorted(contributions, key=lambda item: abs(item["contribution"]), reverse=True)
+
+
+@lru_cache(maxsize=1)
+def _shap_explainer():
+    try:
+        import shap
+    except ImportError:
+        return None
+
+    artifact = _runtime_ai4i_artifact()
+    if artifact is None:
+        return None
+
+    try:
+        return shap.TreeExplainer(artifact["model"])
+    except Exception:
+        return None
+
+
+def _extract_class_one_shap_values(raw_values):
+    if isinstance(raw_values, list):
+        if len(raw_values) > 1:
+            return np.asarray(raw_values[1])[0]
+        return np.asarray(raw_values[0])[0]
+
+    values = np.asarray(raw_values)
+    if values.ndim == 3 and values.shape[-1] > 1:
+        return values[0, :, 1]
+    if values.ndim == 2:
+        return values[0]
+    return values
+
+
+def _shap_feature_contributions(selected_row, features):
+    explainer = _shap_explainer()
+    if explainer is None:
+        return None
+
+    row_frame = selected_row[features].astype(float).to_frame().T
+    try:
+        raw_values = explainer.shap_values(row_frame)
+        shap_values = _extract_class_one_shap_values(raw_values)
+    except Exception:
+        return None
+
+    return sorted(
+        [
+            {
+                "feature": feature,
+                "label": _feature_label(feature),
+                "value": float(row_frame.iloc[0][feature]),
+                "baseline": None,
+                "contribution": float(value),
+                "direction": "increased" if value >= 0 else "reduced",
+                "method": "SHAP",
+            }
+            for feature, value in zip(features, shap_values)
+        ],
+        key=lambda item: abs(item["contribution"]),
+        reverse=True,
+    )
 
 
 def _ai4i_explanation(selected_row, artifact, probability):
     model = artifact["model"]
     features = artifact.get("features", AI4I_FEATURES)
     baselines = artifact.get("feature_medians", {})
-    contributions = _local_feature_contributions(model, selected_row, features, baselines, probability)
+    contributions = _shap_feature_contributions(selected_row, features)
+    explanation_method = "SHAP"
+    if contributions is None:
+        contributions = _local_feature_contributions(model, selected_row, features, baselines, probability)
+        explanation_method = "probability-delta fallback"
+
     positive_drivers = [item for item in contributions if item["contribution"] > 0.005]
     rules = _ai4i_rules_explanation(selected_row)
 
     if positive_drivers:
         driver_text = "; ".join(
             f"{item['label']} at {_format_feature_value(item['feature'], item['value'])} "
-            f"raised probability by {item['contribution'] * 100:.1f} pp"
+            f"raised the failure signal by {item['contribution'] * 100:.1f} pp"
             for item in positive_drivers[:3]
         )
     else:
-        driver_text = "No feature strongly raised the failure probability against the training baseline"
+        driver_text = "No feature strongly raised the failure signal against the training baseline"
 
     if rules:
         driver_text += ". Rule checks also flagged: " + ", ".join(rules)
 
-    return driver_text, contributions
+    driver_text = f"{explanation_method}: {driver_text}"
+    return driver_text, contributions, explanation_method
 
 
 def predict_fault(selected_row: pd.Series, history_df: pd.DataFrame):
@@ -276,6 +344,7 @@ def predict_fault(selected_row: pd.Series, history_df: pd.DataFrame):
                 "predicted_failure": False,
                 "feature_contributions": contributions,
                 "model_name": model_name,
+                "explanation_method": "unavailable",
             }
         model = artifact["model"]
         features = artifact.get("features", AI4I_FEATURES)
@@ -283,8 +352,9 @@ def predict_fault(selected_row: pd.Series, history_df: pd.DataFrame):
         model_name = artifact.get("model_name", MODEL_NAME)
         feature_frame = selected_row[features].astype(float).to_frame().T
         probability = float(model.predict_proba(feature_frame)[0, 1])
-        explanation, contributions = _ai4i_explanation(selected_row, artifact, probability)
+        explanation, contributions, explanation_method = _ai4i_explanation(selected_row, artifact, probability)
     else:
+        explanation_method = "runtime threshold rules"
         model = _train_threshold_fallback(history_df)
         if model is None:
             return {
@@ -295,6 +365,7 @@ def predict_fault(selected_row: pd.Series, history_df: pd.DataFrame):
                 "predicted_failure": False,
                 "feature_contributions": contributions,
                 "model_name": "Runtime Threshold Model",
+                "explanation_method": explanation_method,
             }
         features = DERIVED_FEATURES
         feature_frame = selected_row[features].astype(float).to_frame().T
@@ -315,4 +386,5 @@ def predict_fault(selected_row: pd.Series, history_df: pd.DataFrame):
         "predicted_failure": probability >= threshold,
         "feature_contributions": contributions,
         "model_name": model_name,
+        "explanation_method": explanation_method,
     }
